@@ -23,18 +23,14 @@ const Signup = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(
-        "https://final-year-project-9ydn.onrender.com/api/auth/signup",
-        formData
-      );
+      // Send all formData to backend
+      await axios.post("https://final-year-project-9ydn.onrender.com/api/auth/signup", formData);
       alert("Signup successful! Please login.");
       navigate("/login");
     } catch (err) {
-      if (err.response && err.response.data) {
+      if (err.response && err.response.data)
         alert(err.response.data.message);
-      } else {
-        alert("Signup failed. Please try again.");
-      }
+      else alert(err.message);
     }
   };
 
