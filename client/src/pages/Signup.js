@@ -23,14 +23,19 @@ const Signup = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Send all formData to backend
-      await axios.post("https://final-year-project-9ydn.onrender.com/api/auth/signup", formData);
+      // ✅ Updated to use deployed backend URL
+      await axios.post(
+        "https://final-year-project-9ydn.onrender.com/api/auth/signup",
+        formData
+      );
       alert("Signup successful! Please login.");
       navigate("/login");
     } catch (err) {
-      if (err.response && err.response.data)
+      if (err.response && err.response.data) {
         alert(err.response.data.message);
-      else alert(err.message);
+      } else {
+        alert(err.message);
+      }
     }
   };
 
