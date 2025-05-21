@@ -24,7 +24,7 @@ const Signup = () => {
     e.preventDefault();
     try {
       // Send all formData to backend
-      await axios.post("http://localhost:5000/api/auth/signup", formData);
+      await axios.post("https://final-year-project-9ydn.onrender.com/api/auth/signup", formData);
       alert("Signup successful! Please login.");
       navigate("/login");
     } catch (err) {
