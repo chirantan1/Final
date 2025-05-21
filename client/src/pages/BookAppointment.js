@@ -35,7 +35,7 @@ const BookAppointment = () => {
 
     try {
       await axios.post(
-        "http://localhost:5000/api/appointments",
+        "https://final-year-project-9ydn.onrender.com",
         {
           doctorId,
           date: formData.date,
