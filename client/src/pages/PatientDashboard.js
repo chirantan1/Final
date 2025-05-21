@@ -15,7 +15,7 @@ const PatientDashboard = () => {
     const fetchDoctors = async () => {
       try {
         setLoadingDoctors(true);
-        const res = await axios.get("http://localhost:5000/api/auth/doctors");
+        const res = await axios.get("https://final-year-project-9ydn.onrender.com/api/auth/doctors");
         setDoctors(res.data);
       } catch (err) {
         console.error("Error fetching doctors:", err);
@@ -34,7 +34,7 @@ const PatientDashboard = () => {
         setLoadingAppointments(true);
         const token = localStorage.getItem("token");
         const res = await axios.get(
-          "http://localhost:5000/api/appointments/patient",
+          "https://final-year-project-9ydn.onrender.com/api/appointments/patient",
           {
             headers: {
               Authorization: `Bearer ${token}`,
