@@ -23,7 +23,7 @@ const DoctorDashboard = () => {
     }
 
     try {
-      const res = await axios.get("http://localhost:5000/api/appointments/doctor", {
+      const res = await axios.get("https://final-year-project-9ydn.onrender.com/api/appointments/doctor", {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -51,7 +51,7 @@ const DoctorDashboard = () => {
     try {
       setActionLoadingId(id);
       await axios.put(
-        `http://localhost:5000/api/appointments/${id}/accept`,
+        `https://final-year-project-9ydn.onrender.com/api/appointments/${id}/accept`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -75,9 +75,8 @@ const DoctorDashboard = () => {
 
     try {
       setActionLoadingId(id);
-      // Changed from PUT to PATCH here
       await axios.patch(
-        `http://localhost:5000/api/appointments/${id}/cancel`,
+        `https://final-year-project-9ydn.onrender.com/api/appointments/${id}/cancel`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
