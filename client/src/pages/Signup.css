@@ -1,0 +1,149 @@
+.signup-container {
+  max-width: 500px;
+  margin: 40px auto;
+  padding: 40px;
+  border-radius: 16px;
+  background-color: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.signup-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+}
+
+.signup-container h2 {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #2d3748;
+  font-size: 28px;
+  font-weight: 700;
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.signup-container h2::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 4px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 4px;
+}
+
+.signup-container form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.signup-container input,
+.signup-container select,
+.signup-container textarea {
+  padding: 14px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  background-color: #f8fafc;
+}
+
+.signup-container input:focus,
+.signup-container select:focus,
+.signup-container textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  outline: none;
+  background-color: #ffffff;
+}
+
+.signup-container textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.signup-container button {
+  padding: 16px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 10px;
+}
+
+.signup-container button:hover {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  box-shadow: 0 6px 12px rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
+}
+
+.signup-container button:active {
+  transform: translateY(0);
+}
+
+.signup-container p {
+  text-align: center;
+  margin-top: 25px;
+  color: #4a5568;
+}
+
+.signup-container a {
+  color: #3b82f6;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.signup-container a:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Conditional doctor fields animation */
+.doctor-fields {
+  animation: fadeIn 0.5s ease-out;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 20px;
+  margin-top: 10px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  .signup-container {
+    margin: 20px;
+    padding: 30px 20px;
+  }
+  
+  .signup-container h2 {
+    font-size: 24px;
+  }
+  
+  .signup-container input,
+  .signup-container select,
+  .signup-container textarea {
+    padding: 12px 14px;
+  }
+}

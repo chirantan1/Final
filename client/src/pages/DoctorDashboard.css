@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+/* Global Style */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(135deg, #e3ffe7, #d9e7ff);
+  color: #333;
+}
+
+/* Main Container */
+.doctor-dashboard {
+  max-width: 1000px;
+  margin: 40px auto;
+  padding: 30px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  animation: fadeInUp 0.8s ease;
+}
+
+/* Title */
+.doctor-dashboard h2 {
+  font-size: 2.2rem;
+  color: #2c3e50;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.doctor-dashboard h4 {
+  font-size: 1.4rem;
+  color: #34495e;
+  margin-bottom: 25px;
+  border-left: 5px solid #00b894;
+  padding-left: 12px;
+}
+
+/* Appointment Card */
+.appt-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease;
+  animation: slideIn 0.5s ease forwards;
+  border-left: 6px solid #74b9ff;
+}
+
+.appt-card:hover {
+  transform: translateY(-4px);
+}
+
+/* Status Badge */
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-block;
+  text-transform: capitalize;
+}
+
+.status-pending {
+  background-color: rgba(255, 193, 7, 0.15);
+  color: #e67e22;
+  border: 1px solid #f39c12;
+}
+
+.status-confirmed {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #27ae60;
+  border: 1px solid #2ecc71;
+}
+
+.status-cancelled {
+  background-color: rgba(244, 67, 54, 0.15);
+  color: #c0392b;
+  border: 1px solid #e74c3c;
+}
+
+/* Buttons */
+.btn-group {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.accept, .cancel {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.accept {
+  background: linear-gradient(to right, #00b894, #00cec9);
+  color: white;
+  box-shadow: 0 5px 15px rgba(0, 206, 201, 0.4);
+}
+
+.accept:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 206, 201, 0.6);
+}
+
+.cancel {
+  background: linear-gradient(to right, #d63031, #e17055);
+  color: white;
+  box-shadow: 0 5px 15px rgba(214, 48, 49, 0.4);
+}
+
+.cancel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(214, 48, 49, 0.6);
+}
+
+/* Messages */
+.success-message, .error-message, .no-appointments {
+  margin-top: 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 8px;
+  padding: 12px;
+  animation: fadeIn 0.4s ease-in;
+}
+
+.success-message {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #2ecc71;
+  border: 1px solid #27ae60;
+}
+
+.error-message {
+  background-color: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid #c0392b;
+}
+
+.no-appointments {
+  color: #555;
+  font-style: italic;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
