@@ -23,7 +23,6 @@ const Signup = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // ✅ Updated to use deployed backend URL
       await axios.post(
         "https://final-year-project-9ydn.onrender.com/api/auth/signup",
         formData
@@ -34,7 +33,7 @@ const Signup = () => {
       if (err.response && err.response.data) {
         alert(err.response.data.message);
       } else {
-        alert(err.message);
+        alert("Signup failed. Please try again.");
       }
     }
   };
