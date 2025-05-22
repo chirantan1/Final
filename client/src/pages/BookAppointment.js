@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import "./BookAppointment.css";
 
 const BookAppointment = () => {
-  const [formData, setFormData] = useState({ reason: "" });
+  const [formData, setFormData] = useState({ date: "", reason: "" });
   const [doctorId, setDoctorId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
@@ -38,7 +38,7 @@ const BookAppointment = () => {
         "https://final-year-project-9ydn.onrender.com/api/appointments",
         {
           doctorId,
-          // date removed
+          date: formData.date, // Only date is sent
           purpose: formData.reason,
         },
         {
@@ -58,7 +58,16 @@ const BookAppointment = () => {
     <div className="book-appointment-container">
       <h2 className="title">Book Appointment</h2>
       <form className="appointment-form" onSubmit={handleSubmit}>
-        {/* Date input removed */}
+        {/* Date input added */}
+        <label htmlFor="date">Select Date</label>
+        <input
+          type="date"
+          id="date"
+          name="date"
+          value={formData.date}
+          onChange={handleChange}
+          required
+        />
 
         <label htmlFor="reason">Purpose</label>
         <textarea
