@@ -16,6 +16,11 @@ const handleError = (res, err, context) => {
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+const toDateOnly = (val) => {
+  const date = new Date(val);
+  date.setUTCHours(0, 0, 0, 0); // reset time to 00:00:00.000 UTC
+  return date;
+};
 // GET patient appointments
 router.get("/patient", protect, async (req, res) => {
   if (req.user.role !== "patient") {
@@ -59,8 +64,8 @@ router.get("/doctor", protect, async (req, res) => {
   if (status) query.status = status;
   if (from || to) {
     query.date = {};
-    if (from) query.date.$gte = new Date(from);
-    if (to) query.date.$lte = new Date(to);
+    if (from) query.date.$gte = toDateOnly(from);
+    if (to) query.date.$lte = toDateOnly(to);
   }
 
   try {
@@ -100,8 +105,10 @@ router.post("/", protect, async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid Doctor ID format." });
   }
 
-  const appointmentDate = new Date(date);
-  if (isNaN(appointmentDate) || appointmentDate <= new Date()) {
+  const appointmentDate = toDateOnly(date);
+  const today = toDateOnly(new Date());
+
+  if (isNaN(appointmentDate) || appointmentDate < today) {
     return res.status(400).json({ success: false, message: "Invalid or past appointment date." });
   }
 
@@ -115,7 +122,7 @@ router.post("/", protect, async (req, res) => {
     if (conflict) {
       return res.status(409).json({
         success: false,
-        message: "Doctor already has an appointment at this time.",
+        message: "Doctor already has an appointment on this date.",
       });
     }
 
@@ -157,12 +164,10 @@ router.patch("/:id/cancel", protect, async (req, res) => {
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
-    // Make sure req.user.userId and appointment.patient._id / doctor._id are strings for comparison
     const userId = req.user.userId.toString();
     const patientId = appointment.patient._id.toString();
     const doctorId = appointment.doctor._id.toString();
 
-    // Check if current user is either patient or doctor in the appointment
     const isOwner = userId === patientId || userId === doctorId;
 
     if (!isOwner) {
@@ -176,42 +181,32 @@ router.patch("/:id/cancel", protect, async (req, res) => {
       });
     }
 
-    // Calculate hours until appointment date
-    const hoursUntil = (appointment.date - new Date()) / (1000 * 60 * 60);
+    const today = toDateOnly(new Date());
+    const appointmentDate = toDateOnly(appointment.date);
 
-    // Patients cannot cancel less than 24 hours before appointment
-    if (req.user.role === "patient" && hoursUntil < 24) {
+    const daysUntil = (appointmentDate - today) / (1000 * 60 * 60 * 24);
+
+    if (req.user.role === "patient" && daysUntil < 1) {
       return res.status(403).json({
         success: false,
-        message: "Cannot cancel appointment less than 24 hours before scheduled time.",
+        message: "Cannot cancel appointment less than 1 day before.",
       });
     }
-
-    // Doctors can cancel anytime, no restriction
 
     appointment.status = "cancelled";
+    const savedAppointment = await appointment.save();
 
-    try {
-      const savedAppointment = await appointment.save();
-      return res.json({
-        success: true,
-        message: "Appointment cancelled successfully.",
-        data: savedAppointment,
-      });
-    } catch (saveError) {
-      console.error("Error saving cancelled appointment:", saveError);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to cancel appointment due to server error.",
-        error: saveError.message,
-      });
-    }
+    return res.json({
+      success: true,
+      message: "Appointment cancelled successfully.",
+      data: savedAppointment,
+    });
   } catch (err) {
     handleError(res, err, "cancel appointment");
   }
 });
 
-// PUT accept appointment (doctor only)
+// PUT accept appointment
 router.put("/:id/accept", protect, async (req, res) => {
   if (req.user.role !== "doctor") {
     return res.status(403).json({ success: false, message: "Access denied. Doctors only." });

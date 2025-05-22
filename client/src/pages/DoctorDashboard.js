@@ -92,9 +92,11 @@ const DoctorDashboard = () => {
     }
   };
 
+  // Format date to show only YYYY-MM-DD (without time)
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
-    return date.toLocaleString();
+    // Return only date part in ISO format (YYYY-MM-DD)
+    return date.toISOString().split("T")[0];
   };
 
   if (!token || token.split('.').length !== 3) {

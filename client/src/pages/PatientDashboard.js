@@ -117,10 +117,11 @@ const PatientDashboard = () => {
               <p>
                 <strong>Doctor:</strong> Dr. {appt.doctor?.name || "N/A"}
               </p>
-              <p>
+              {/* Date removed as requested */}
+              {/* <p>
                 <strong>Date:</strong>{" "}
                 {appt.date ? new Date(appt.date).toLocaleString() : "N/A"}
-              </p>
+              </p> */}
               <p>
                 <strong>Status:</strong> {appt.status || "N/A"}
               </p>
