@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
-import adminRoutes from "./routes/admin.js";
+// Remove this line: import adminRoutes from "./routes/admin.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -9,8 +9,7 @@ const app = express();
 
 app.use(express.json());
 
-// Routes
-app.use("/api/admin", adminRoutes);
+// Remove this line: app.use("/api/admin", adminRoutes);
 
 const PORT = process.env.PORT || 5000;
 
