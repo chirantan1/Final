@@ -1,3 +1,4 @@
+// appointmentRoutes.js
 const express = require("express");
 const mongoose = require("mongoose");
 const Appointment = require("../models/Appointment");
@@ -6,7 +7,7 @@ const { protect } = require("../middleware/authMiddleware");
 const router = express.Router();
 
 const handleError = (res, err, context) => {
-  console.error(`Error in ${context}:`, err);
+  console.error(`Error in ${context}:`, err.stack); // Include full stack trace for debugging
   res.status(500).json({
     success: false,
     message: `Server error while processing ${context}.`,
@@ -34,7 +35,8 @@ const sanitizeQueryParams = (page, limit) => {
 
 // GET patient appointments
 router.get("/patient", protect, async (req, res) => {
-  if (req.user.role !== "patient") {
+  if (!req.user || req.user.role !== "patient") {
+    console.error("Access denied: Invalid user or role", { user: req.user });
     return res.status(403).json({ success: false, message: "Access denied. Patients only." });
   }
 
@@ -58,6 +60,7 @@ router.get("/patient", protect, async (req, res) => {
     });
 
     if (result.docs.some((doc) => !doc.doctor)) {
+      console.error("Invalid doctor references in appointments", { query, userId: req.user.userId });
       return res.status(400).json({ success: false, message: "One or more appointments reference invalid doctors." });
     }
 
@@ -75,7 +78,8 @@ router.get("/patient", protect, async (req, res) => {
 
 // GET doctor appointments
 router.get("/doctor", protect, async (req, res) => {
-  if (req.user.role !== "doctor") {
+  if (!req.user || req.user.role !== "doctor") {
+    console.error("Access denied: Invalid user or role", { user: req.user });
     return res.status(403).json({ success: false, message: "Access denied. Doctors only." });
   }
 
@@ -99,6 +103,7 @@ router.get("/doctor", protect, async (req, res) => {
     });
 
     if (result.docs.some((doc) => !doc.patient)) {
+      console.error("Invalid patient references in appointments", { query, userId: req.user.userId });
       return res.status(400).json({ success: false, message: "One or more appointments reference invalid patients." });
     }
 
@@ -116,28 +121,37 @@ router.get("/doctor", protect, async (req, res) => {
 
 // POST book appointment
 router.post("/", protect, async (req, res) => {
-  if (req.user.role !== "patient") {
+  if (!req.user || req.user.role !== "patient") {
+    console.error("Access denied: Invalid user or role", { user: req.user });
     return res.status(403).json({ success: false, message: "Access denied. Patients only." });
   }
 
   const { doctorId, date, purpose, notes } = req.body;
   if (!doctorId || !date) {
+    console.error("Missing required fields", { doctorId, date });
     return res.status(400).json({ success: false, message: "Doctor ID and date are required." });
   }
 
   if (!isValidId(doctorId)) {
+    console.error("Invalid Doctor ID format", { doctorId });
     return res.status(400).json({ success: false, message: "Invalid Doctor ID format." });
   }
 
   const appointmentDate = new Date(date);
   const today = new Date();
   if (isNaN(appointmentDate.getTime()) || appointmentDate < today) {
+    console.error("Invalid or past appointment date", { date });
     return res.status(400).json({ success: false, message: "Invalid or past appointment date." });
   }
 
-  const session = await mongoose.startSession();
+  const useTransactions = process.env.NODE_ENV === "production";
+  let session = null;
+
   try {
-    session.startTransaction();
+    if (useTransactions) {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    }
 
     const conflict = await Appointment.findOne({
       doctor: doctorId,
@@ -146,10 +160,15 @@ router.post("/", protect, async (req, res) => {
         $lte: new Date(appointmentDate.getTime() + 30 * 60 * 1000),
       },
       status: { $in: ["pending", "confirmed"] },
-    }).session(session);
+    }).session(useTransactions ? session : null);
 
     if (conflict) {
-      await session.abortTransaction();
+      console.error("Conflicting appointment found", {
+        doctorId,
+        date: appointmentDate,
+        conflictId: conflict._id,
+      });
+      if (useTransactions) await session.abortTransaction();
       return res.status(409).json({
         success: false,
         message: "Doctor already has an appointment at this time.",
@@ -172,7 +191,7 @@ router.post("/", protect, async (req, res) => {
           status: "pending",
         },
       ],
-      { session }
+      { session: useTransactions ? session : null }
     );
 
     const populatedAppointment = await Appointment.populate(appointment[0], [
@@ -181,62 +200,80 @@ router.post("/", protect, async (req, res) => {
     ]);
 
     if (!populatedAppointment.doctor || !populatedAppointment.patient) {
-      await session.abortTransaction();
+      console.error("Invalid doctor or patient reference", {
+        doctor: populatedAppointment.doctor,
+        patient: populatedAppointment.patient,
+      });
+      if (useTransactions) await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: "Invalid doctor or patient reference.",
       });
     }
 
-    await session.commitTransaction();
+    if (useTransactions) await session.commitTransaction();
     res.status(201).json({
       success: true,
       message: "Appointment booked successfully",
       data: populatedAppointment,
     });
   } catch (err) {
-    await session.abortTransaction();
+    console.error(`Error booking appointment for doctor ${doctorId}:`, err.stack);
+    if (useTransactions && session) await session.abortTransaction();
     handleError(res, err, "book appointment");
   } finally {
-    session.endSession();
+    if (useTransactions && session) session.endSession();
   }
 });
 
 // PUT accept appointment
 router.put("/:id/accept", protect, async (req, res) => {
-  if (req.user.role !== "doctor") {
+  if (!req.user || req.user.role !== "doctor") {
+    console.error("Access denied: Invalid user or role", { user: req.user });
     return res.status(403).json({ success: false, message: "Access denied. Doctors only." });
   }
 
   const { id } = req.params;
   if (!isValidId(id)) {
+    console.error("Invalid appointment ID:", id);
     return res.status(400).json({ success: false, message: "Invalid appointment ID." });
   }
 
-  const session = await mongoose.startSession();
-  try {
-    session.startTransaction();
+  const useTransactions = process.env.NODE_ENV === "production";
+  let session = null;
 
-    // Find the appointment and ensure it’s pending and belongs to the doctor
-    const appointment = await Appointment.findOne({
-      _id: id,
-      doctor: req.user.userId,
-      status: "pending",
-    })
-      .session(session)
+  try {
+    if (useTransactions) {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    }
+
+    console.log(`Attempting to accept appointment ${id} by doctor ${req.user.userId}`);
+
+    // Find the appointment
+    const query = { _id: id, doctor: req.user.userId, status: "pending" };
+    const appointment = await Appointment.findOne(query)
       .populate("patient", "name email")
-      .populate("doctor", "name email");
+      .populate("doctor", "name email")
+      .session(useTransactions ? session : null);
 
     if (!appointment) {
-      await session.abortTransaction();
+      console.error("Appointment not found or not eligible", { id, doctorId: req.user.userId });
+      if (useTransactions) await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: "Appointment not found or not eligible for acceptance.",
       });
     }
 
+    // Validate populated fields
     if (!appointment.patient || !appointment.doctor) {
-      await session.abortTransaction();
+      console.error("Invalid appointment: missing patient or doctor", {
+        appointmentId: id,
+        patient: appointment.patient,
+        doctor: appointment.doctor,
+      });
+      if (useTransactions) await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: "Invalid appointment: patient or doctor not found.",
@@ -245,14 +282,15 @@ router.put("/:id/accept", protect, async (req, res) => {
 
     // Ensure the appointment is in the future
     if (appointment.date < new Date()) {
-      await session.abortTransaction();
+      console.error("Cannot accept past appointment", { appointmentId: id, date: appointment.date });
+      if (useTransactions) await session.abortTransaction();
       return res.status(400).json({
         success: false,
         message: "Cannot accept a past appointment.",
       });
     }
 
-    // Check for conflicting appointments (pending or confirmed)
+    // Check for conflicting appointments
     const conflict = await Appointment.findOne({
       doctor: req.user.userId,
       date: {
@@ -261,10 +299,15 @@ router.put("/:id/accept", protect, async (req, res) => {
       },
       status: { $in: ["pending", "confirmed"] },
       _id: { $ne: appointment._id },
-    }).session(session);
+    }).session(useTransactions ? session : null);
 
     if (conflict) {
-      await session.abortTransaction();
+      console.error("Conflicting appointment found", {
+        appointmentId: id,
+        conflictId: conflict._id,
+        conflictDate: conflict.date,
+      });
+      if (useTransactions) await session.abortTransaction();
       return res.status(409).json({
         success: false,
         message: "You already have a conflicting appointment at this time.",
@@ -278,40 +321,48 @@ router.put("/:id/accept", protect, async (req, res) => {
 
     // Update the appointment status to confirmed
     const updatedAppointment = await Appointment.findOneAndUpdate(
-      { _id: id, doctor: req.user.userId, status: "pending" },
+      query,
       { status: "confirmed" },
-      { new: true, runValidators: true, session }
+      { new: true, runValidators: true }
     )
       .populate("patient", "name email")
-      .populate("doctor", "name email");
+      .populate("doctor", "name email")
+      .session(useTransactions ? session : null);
 
     if (!updatedAppointment) {
-      await session.abortTransaction();
+      console.error("Failed to update appointment", { id, doctorId: req.user.userId });
+      if (useTransactions) await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: "Failed to update appointment. It may no longer be pending.",
       });
     }
 
-    await session.commitTransaction();
+    if (useTransactions) await session.commitTransaction();
     res.json({
       success: true,
       message: "Appointment accepted successfully.",
       data: updatedAppointment,
     });
   } catch (err) {
-    await session.abortTransaction();
-    console.error(`Error accepting appointment ${id} for doctor ${req.user.userId}:`, err);
+    console.error(`Error accepting appointment ${id} for doctor ${req.user.userId}:`, err.stack);
+    if (useTransactions && session) await session.abortTransaction();
     handleError(res, err, "accept appointment");
   } finally {
-    session.endSession();
+    if (useTransactions && session) session.endSession();
   }
 });
 
 // PATCH cancel appointment
 router.patch("/:id/cancel", protect, async (req, res) => {
+  if (!req.user) {
+    console.error("Access denied: No user provided", { user: req.user });
+    return res.status(403).json({ success: false, message: "Access denied. Authentication required." });
+  }
+
   const { id } = req.params;
   if (!isValidId(id)) {
+    console.error("Invalid appointment ID", { id });
     return res.status(400).json({ success: false, message: "Invalid appointment ID." });
   }
 
@@ -321,10 +372,16 @@ router.patch("/:id/cancel", protect, async (req, res) => {
       .populate("doctor", "name email");
 
     if (!appointment) {
+      console.error("Appointment not found", { id });
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
     if (!appointment.patient || !appointment.doctor) {
+      console.error("Invalid appointment: missing patient or doctor", {
+        appointmentId: id,
+        patient: appointment.patient,
+        doctor: appointment.doctor,
+      });
       return res.status(400).json({
         success: false,
         message: "Invalid appointment: patient or doctor not found.",
@@ -336,10 +393,12 @@ router.patch("/:id/cancel", protect, async (req, res) => {
     const isDoctor = userId === appointment.doctor._id.toString();
 
     if (!isPatient && !isDoctor) {
+      console.error("Unauthorized attempt to cancel appointment", { userId, appointmentId: id });
       return res.status(403).json({ success: false, message: "Not authorized to cancel this appointment." });
     }
 
     if (["cancelled", "completed"].includes(appointment.status)) {
+      console.error("Cannot cancel appointment in current status", { appointmentId: id, status: appointment.status });
       return res.status(400).json({
         success: false,
         message: `Cannot cancel a ${appointment.status} appointment.`,
@@ -350,6 +409,7 @@ router.patch("/:id/cancel", protect, async (req, res) => {
     const hoursUntilAppointment = (appointment.date - now) / (1000 * 60 * 60);
 
     if (isPatient && hoursUntilAppointment < 24) {
+      console.error("Patient cancellation too late", { appointmentId: id, hoursUntilAppointment });
       return res.status(403).json({
         success: false,
         message: "Patients must cancel at least 24 hours before the appointment.",
@@ -357,6 +417,7 @@ router.patch("/:id/cancel", protect, async (req, res) => {
     }
 
     if (isDoctor && hoursUntilAppointment < 1) {
+      console.error("Doctor cancellation too late", { appointmentId: id, hoursUntilAppointment });
       return res.status(403).json({
         success: false,
         message: "Doctors must cancel at least 1 hour before the appointment.",
@@ -375,13 +436,15 @@ router.patch("/:id/cancel", protect, async (req, res) => {
       data: appointment,
     });
   } catch (err) {
+    console.error(`Error cancelling appointment ${id}:`, err.stack);
     handleError(res, err, "cancel appointment");
   }
 });
 
 // PATCH complete appointment
 router.patch("/:id/complete", protect, async (req, res) => {
-  if (req.user.role !== "doctor") {
+  if (!req.user || req.user.role !== "doctor") {
+    console.error("Access denied: Invalid user or role", { user: req.user });
     return res.status(403).json({ success: false, message: "Access denied. Doctors only." });
   }
 
@@ -389,6 +452,7 @@ router.patch("/:id/complete", protect, async (req, res) => {
   const { notes, prescription } = req.body;
 
   if (!isValidId(id)) {
+    console.error("Invalid appointment ID", { id });
     return res.status(400).json({ success: false, message: "Invalid appointment ID." });
   }
 
@@ -398,10 +462,16 @@ router.patch("/:id/complete", protect, async (req, res) => {
       .populate("doctor", "name email");
 
     if (!appointment) {
+      console.error("Appointment not found", { id });
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
     if (!appointment.patient || !appointment.doctor) {
+      console.error("Invalid appointment: missing patient or doctor", {
+        appointmentId: id,
+        patient: appointment.patient,
+        doctor: appointment.doctor,
+      });
       return res.status(400).json({
         success: false,
         message: "Invalid appointment: patient or doctor not found.",
@@ -409,14 +479,17 @@ router.patch("/:id/complete", protect, async (req, res) => {
     }
 
     if (appointment.doctor._id.toString() !== req.user.userId) {
+      console.error("Unauthorized attempt to complete appointment", { userId: req.user.userId, appointmentId: id });
       return res.status(403).json({ success: false, message: "Not authorized to complete this appointment." });
     }
 
     if (appointment.status !== "confirmed") {
+      console.error("Cannot complete appointment in current status", { appointmentId: id, status: appointment.status });
       return res.status(400).json({ success: false, message: `Cannot complete a ${appointment.status} appointment.` });
     }
 
     if (appointment.date > new Date()) {
+      console.error("Cannot complete future appointment", { appointmentId: id, date: appointment.date });
       return res.status(400).json({ success: false, message: "Cannot complete a future appointment." });
     }
 
@@ -433,14 +506,21 @@ router.patch("/:id/complete", protect, async (req, res) => {
       data: appointment,
     });
   } catch (err) {
+    console.error(`Error completing appointment ${id}:`, err.stack);
     handleError(res, err, "complete appointment");
   }
 });
 
 // GET single appointment details
 router.get("/:id", protect, async (req, res) => {
+  if (!req.user) {
+    console.error("Access denied: No user provided", { user: req.user });
+    return res.status(403).json({ success: false, message: "Access denied. Authentication required." });
+  }
+
   const { id } = req.params;
   if (!isValidId(id)) {
+    console.error("Invalid appointment ID", { id });
     return res.status(400).json({ success: false, message: "Invalid appointment ID." });
   }
 
@@ -450,10 +530,16 @@ router.get("/:id", protect, async (req, res) => {
       .populate("doctor", "name specialization phone");
 
     if (!appointment) {
+      console.error("Appointment not found", { id });
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
     if (!appointment.patient || !appointment.doctor) {
+      console.error("Invalid appointment: missing patient or doctor", {
+        appointmentId: id,
+        patient: appointment.patient,
+        doctor: appointment.doctor,
+      });
       return res.status(400).json({
         success: false,
         message: "Invalid appointment: patient or doctor not found.",
@@ -465,6 +551,7 @@ router.get("/:id", protect, async (req, res) => {
     const isDoctor = userId === appointment.doctor._id.toString();
 
     if (!isPatient && !isDoctor && req.user.role !== "admin") {
+      console.error("Unauthorized attempt to view appointment", { userId, appointmentId: id });
       return res.status(403).json({ success: false, message: "Not authorized to view this appointment." });
     }
 
@@ -473,6 +560,7 @@ router.get("/:id", protect, async (req, res) => {
       data: appointment,
     });
   } catch (err) {
+    console.error(`Error getting appointment details ${id}:`, err.stack);
     handleError(res, err, "get appointment details");
   }
 });
