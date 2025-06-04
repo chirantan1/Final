@@ -6,15 +6,16 @@ const { protect } = require("../middleware/authMiddleware");
 const router = express.Router();
 
 const handleError = (res, err, context) => {
-  console.error(`Error in ${context}:`, err.message);
+  console.error(`Error in ${context}:`, err);
   res.status(500).json({
     success: false,
-    message: "Server error",
+    message: `Server error while processing ${context}.`,
     error: process.env.NODE_ENV === "development" ? err.message : undefined,
   });
 };
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 const toDateOnly = (val) => {
   const date = new Date(val);
   date.setUTCHours(0, 0, 0, 0);
@@ -171,23 +172,28 @@ router.put("/:id/accept", protect, async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid appointment ID." });
   }
 
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const appointment = await Appointment.findOneAndUpdate(
-      {
-        _id: id,
-        doctor: req.user.userId,
-        status: "pending"
-      },
-      { status: "confirmed" },
-      { new: true, runValidators: true }
-    )
-    .populate("patient", "name email")
-    .populate("doctor", "name email");
+    console.log(`Attempting to accept appointment ${id} by doctor ${req.user.userId}`);
+
+    // Find the appointment first without updating
+    const appointment = await Appointment.findOne({
+      _id: id,
+      doctor: req.user.userId,
+      status: "pending",
+    })
+      .session(session)
+      .populate("patient", "name email")
+      .populate("doctor", "name email");
 
     if (!appointment) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Appointment not found or not eligible for acceptance." 
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found or not eligible for acceptance.",
       });
     }
 
@@ -200,9 +206,11 @@ router.put("/:id/accept", protect, async (req, res) => {
       },
       status: "confirmed",
       _id: { $ne: appointment._id },
-    });
+    }).session(session);
 
     if (conflict) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(409).json({
         success: false,
         message: "You already have a confirmed appointment at this time.",
@@ -214,12 +222,36 @@ router.put("/:id/accept", protect, async (req, res) => {
       });
     }
 
+    // Update the appointment status to confirmed
+    const updatedAppointment = await Appointment.findOneAndUpdate(
+      { _id: id, doctor: req.user.userId, status: "pending" },
+      { status: "confirmed" },
+      { new: true, runValidators: true, session }
+    )
+      .populate("patient", "name email")
+      .populate("doctor", "name email");
+
+    if (!updatedAppointment) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: "Failed to update appointment. It may no longer be pending.",
+      });
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
     res.json({
       success: true,
       message: "Appointment accepted successfully.",
-      data: appointment,
+      data: updatedAppointment,
     });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error(`Error in accept appointment for ID ${id}:`, err);
     handleError(res, err, "accept appointment");
   }
 });
