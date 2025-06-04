@@ -172,22 +172,26 @@ router.put("/:id/accept", protect, async (req, res) => {
   }
 
   try {
-    const appointment = await Appointment.findById(id)
-      .populate("patient", "name email")
-      .populate("doctor", "name email");
+    const appointment = await Appointment.findOneAndUpdate(
+      {
+        _id: id,
+        doctor: req.user.userId,
+        status: "pending"
+      },
+      { status: "confirmed" },
+      { new: true, runValidators: true }
+    )
+    .populate("patient", "name email")
+    .populate("doctor", "name email");
 
     if (!appointment) {
-      return res.status(404).json({ success: false, message: "Appointment not found." });
+      return res.status(404).json({ 
+        success: false, 
+        message: "Appointment not found or not eligible for acceptance." 
+      });
     }
 
-    if (appointment.doctor._id.toString() !== req.user.userId) {
-      return res.status(403).json({ success: false, message: "Not authorized to accept this appointment." });
-    }
-
-    if (appointment.status !== "pending") {
-      return res.status(400).json({ success: false, message: `Cannot accept a ${appointment.status} appointment.` });
-    }
-
+    // Check for conflicting appointments
     const conflict = await Appointment.findOne({
       doctor: req.user.userId,
       date: {
@@ -209,9 +213,6 @@ router.put("/:id/accept", protect, async (req, res) => {
         },
       });
     }
-
-    appointment.status = "confirmed";
-    await appointment.save();
 
     res.json({
       success: true,
