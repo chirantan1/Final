@@ -18,27 +18,33 @@ const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 const toDateOnly = (val) => {
   const date = new Date(val);
-  date.setUTCHours(0, 0, 0, 0); // reset time to 00:00:00.000 UTC
+  date.setUTCHours(0, 0, 0, 0);
   return date;
 };
+
 // GET patient appointments
 router.get("/patient", protect, async (req, res) => {
   if (req.user.role !== "patient") {
     return res.status(403).json({ success: false, message: "Access denied. Patients only." });
   }
 
-  const { page = 1, limit = 10 } = req.query;
+  const { status, from, to, page = 1, limit = 10 } = req.query;
+  const query = { patient: req.user.userId };
+
+  if (status) query.status = status;
+  if (from || to) {
+    query.date = {};
+    if (from) query.date.$gte = toDateOnly(from);
+    if (to) query.date.$lte = toDateOnly(to);
+  }
 
   try {
-    const result = await Appointment.paginate(
-      { patient: req.user.userId },
-      {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        sort: { date: -1 },
-        populate: { path: "doctor", select: "name specialization phone" },
-      }
-    );
+    const result = await Appointment.paginate(query, {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      sort: { date: -1 },
+      populate: { path: "doctor", select: "name specialization phone" },
+    });
 
     res.json({
       success: true,
@@ -95,7 +101,7 @@ router.post("/", protect, async (req, res) => {
     return res.status(403).json({ success: false, message: "Access denied. Patients only." });
   }
 
-  const { doctorId, date, purpose } = req.body;
+  const { doctorId, date, purpose, notes } = req.body;
 
   if (!doctorId || !date) {
     return res.status(400).json({ success: false, message: "Doctor ID and date are required." });
@@ -105,24 +111,33 @@ router.post("/", protect, async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid Doctor ID format." });
   }
 
-  const appointmentDate = toDateOnly(date);
-  const today = toDateOnly(new Date());
+  const appointmentDate = new Date(date);
+  const today = new Date();
 
-  if (isNaN(appointmentDate) || appointmentDate < today) {
+  if (isNaN(appointmentDate.getTime()) || appointmentDate < today) {
     return res.status(400).json({ success: false, message: "Invalid or past appointment date." });
   }
 
   try {
+    // Check for existing appointments at the same time
     const conflict = await Appointment.findOne({
       doctor: doctorId,
-      date: appointmentDate,
+      date: { 
+        $gte: new Date(appointmentDate.getTime() - 30 * 60 * 1000), // 30 minutes before
+        $lte: new Date(appointmentDate.getTime() + 30 * 60 * 1000)  // 30 minutes after
+      },
       status: { $in: ["pending", "confirmed"] },
     });
 
     if (conflict) {
       return res.status(409).json({
         success: false,
-        message: "Doctor already has an appointment on this date.",
+        message: "Doctor already has an appointment at this time.",
+        conflictingAppointment: {
+          id: conflict._id,
+          date: conflict.date,
+          patient: conflict.patient
+        }
       });
     }
 
@@ -130,14 +145,15 @@ router.post("/", protect, async (req, res) => {
       patient: req.user.userId,
       doctor: doctorId,
       date: appointmentDate,
-      purpose: purpose || "",
+      purpose: purpose || "General Consultation",
+      notes: notes || "",
       status: "pending",
     });
 
-    const populatedAppointment = await Appointment.populate(appointment, {
-      path: "doctor",
-      select: "name specialization phone",
-    });
+    const populatedAppointment = await Appointment.populate(appointment, [
+      { path: "doctor", select: "name specialization phone" },
+      { path: "patient", select: "name email" }
+    ]);
 
     res.status(201).json({
       success: true,
@@ -158,48 +174,63 @@ router.patch("/:id/cancel", protect, async (req, res) => {
   }
 
   try {
-    const appointment = await Appointment.findById(id).populate("patient doctor", "name email");
+    const appointment = await Appointment.findById(id)
+      .populate("patient", "name email")
+      .populate("doctor", "name email");
 
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
     const userId = req.user.userId.toString();
-    const patientId = appointment.patient._id.toString();
-    const doctorId = appointment.doctor._id.toString();
+    const isPatient = userId === appointment.patient._id.toString();
+    const isDoctor = userId === appointment.doctor._id.toString();
 
-    const isOwner = userId === patientId || userId === doctorId;
-
-    if (!isOwner) {
-      return res.status(403).json({ success: false, message: "Not authorized to cancel this appointment." });
+    if (!isPatient && !isDoctor) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Not authorized to cancel this appointment." 
+      });
     }
 
     if (["cancelled", "completed"].includes(appointment.status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot cancel a ${appointment.status} appointment.`,
+        currentStatus: appointment.status
       });
     }
 
-    const today = toDateOnly(new Date());
-    const appointmentDate = toDateOnly(appointment.date);
+    // Additional business logic for cancellation window
+    const now = new Date();
+    const hoursUntilAppointment = (appointment.date - now) / (1000 * 60 * 60);
 
-    const daysUntil = (appointmentDate - today) / (1000 * 60 * 60 * 24);
-
-    if (req.user.role === "patient" && daysUntil < 1) {
+    if (isPatient && hoursUntilAppointment < 24) {
       return res.status(403).json({
         success: false,
-        message: "Cannot cancel appointment less than 1 day before.",
+        message: "Patients must cancel at least 24 hours before the appointment.",
+        hoursRemaining: Math.ceil(hoursUntilAppointment)
+      });
+    }
+
+    if (isDoctor && hoursUntilAppointment < 1) {
+      return res.status(403).json({
+        success: false,
+        message: "Doctors must cancel at least 1 hour before the appointment.",
+        hoursRemaining: Math.ceil(hoursUntilAppointment)
       });
     }
 
     appointment.status = "cancelled";
-    const savedAppointment = await appointment.save();
+    appointment.cancelledBy = req.user.role;
+    appointment.cancellationReason = req.body.reason || "No reason provided";
+    
+    await appointment.save();
 
-    return res.json({
+    res.json({
       success: true,
       message: "Appointment cancelled successfully.",
-      data: savedAppointment,
+      data: appointment,
     });
   } catch (err) {
     handleError(res, err, "cancel appointment");
@@ -219,18 +250,50 @@ router.put("/:id/accept", protect, async (req, res) => {
   }
 
   try {
-    const appointment = await Appointment.findById(id);
+    const appointment = await Appointment.findById(id)
+      .populate("patient", "name email")
+      .populate("doctor", "name email");
 
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
 
-    if (appointment.doctor.toString() !== req.user.userId.toString()) {
-      return res.status(403).json({ success: false, message: "Not authorized to accept this appointment." });
+    if (appointment.doctor._id.toString() !== req.user.userId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Not authorized to accept this appointment." 
+      });
     }
 
     if (appointment.status !== "pending") {
-      return res.status(400).json({ success: false, message: "Only pending appointments can be accepted." });
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot accept a ${appointment.status} appointment.`,
+        currentStatus: appointment.status
+      });
+    }
+
+    // Check if doctor is available at this time
+    const conflictingAppointment = await Appointment.findOne({
+      doctor: req.user.userId,
+      date: {
+        $gte: new Date(appointment.date.getTime() - 30 * 60 * 1000),
+        $lte: new Date(appointment.date.getTime() + 30 * 60 * 1000)
+      },
+      status: "confirmed",
+      _id: { $ne: appointment._id }
+    });
+
+    if (conflictingAppointment) {
+      return res.status(409).json({
+        success: false,
+        message: "You already have a confirmed appointment at this time.",
+        conflictingAppointment: {
+          id: conflictingAppointment._id,
+          date: conflictingAppointment.date,
+          patient: conflictingAppointment.patient
+        }
+      });
     }
 
     appointment.status = "confirmed";
@@ -243,6 +306,108 @@ router.put("/:id/accept", protect, async (req, res) => {
     });
   } catch (err) {
     handleError(res, err, "accept appointment");
+  }
+});
+
+// PATCH complete appointment
+router.patch("/:id/complete", protect, async (req, res) => {
+  if (req.user.role !== "doctor") {
+    return res.status(403).json({ success: false, message: "Access denied. Doctors only." });
+  }
+
+  const { id } = req.params;
+  const { notes, prescription } = req.body;
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: "Invalid appointment ID." });
+  }
+
+  try {
+    const appointment = await Appointment.findById(id)
+      .populate("patient", "name email")
+      .populate("doctor", "name email");
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found." });
+    }
+
+    if (appointment.doctor._id.toString() !== req.user.userId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Not authorized to complete this appointment." 
+      });
+    }
+
+    if (appointment.status !== "confirmed") {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot complete a ${appointment.status} appointment.`,
+        currentStatus: appointment.status
+      });
+    }
+
+    // Verify appointment date is in the past
+    if (appointment.date > new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot complete a future appointment.",
+        appointmentDate: appointment.date,
+        currentDate: new Date()
+      });
+    }
+
+    appointment.status = "completed";
+    appointment.notes = notes || appointment.notes;
+    appointment.prescription = prescription || appointment.prescription;
+    appointment.completedAt = new Date();
+    
+    await appointment.save();
+
+    res.json({
+      success: true,
+      message: "Appointment marked as completed.",
+      data: appointment,
+    });
+  } catch (err) {
+    handleError(res, err, "complete appointment");
+  }
+});
+
+// GET single appointment details
+router.get("/:id", protect, async (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: "Invalid appointment ID." });
+  }
+
+  try {
+    const appointment = await Appointment.findById(id)
+      .populate("patient", "name email phone")
+      .populate("doctor", "name specialization phone");
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found." });
+    }
+
+    // Verify authorization
+    const userId = req.user.userId.toString();
+    const isPatient = appointment.patient && userId === appointment.patient._id.toString();
+    const isDoctor = appointment.doctor && userId === appointment.doctor._id.toString();
+
+    if (!isPatient && !isDoctor && req.user.role !== "admin") {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Not authorized to view this appointment." 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: appointment,
+    });
+  } catch (err) {
+    handleError(res, err, "get appointment details");
   }
 });
 
