@@ -15,7 +15,7 @@ exports.getPatientAppointments = async (req, res) => {
 
     res.json({ success: true, count: appointments.length, data: appointments });
   } catch (err) {
-    console.error(err);
+    console.error("Error in getPatientAppointments:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -35,7 +35,7 @@ exports.getDoctorAppointments = async (req, res) => {
 
     res.json({ success: true, count: appointments.length, data: appointments });
   } catch (err) {
-    console.error(err);
+    console.error("Error in getDoctorAppointments:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -65,7 +65,7 @@ exports.bookAppointment = async (req, res) => {
 
     res.status(201).json({ success: true, data: appointment });
   } catch (err) {
-    console.error(err);
+    console.error("Error in bookAppointment:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -80,11 +80,6 @@ exports.cancelAppointment = async (req, res) => {
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Appointment not found" });
     }
-
-    // Debug logs
-    console.log("User ID:", req.user.userId);
-    console.log("Patient ID:", appointment.patient.toString());
-    console.log("Doctor ID:", appointment.doctor.toString());
 
     if (
       String(appointment.patient) !== String(req.user.userId) &&
@@ -102,23 +97,28 @@ exports.cancelAppointment = async (req, res) => {
       data: appointment,
     });
   } catch (err) {
-    console.error("Cancel Error:", err);
+    console.error("Error in cancelAppointment:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// @desc    Update appointment status
+// @desc    Update appointment status (accept/reject)
 // @route   PATCH /api/appointments/:id/status
 // @access  Private (Doctor only)
 exports.updateAppointmentStatus = async (req, res) => {
   try {
+    console.log("Doctor updating status - User:", req.user);
+
     if (req.user.role !== "doctor") {
       return res.status(403).json({ success: false, message: "Access denied. Doctors only." });
     }
 
     const { status } = req.body;
-    const appointment = await Appointment.findById(req.params.id);
+    if (!status || !["accepted", "rejected"].includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status value" });
+    }
 
+    const appointment = await Appointment.findById(req.params.id);
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Appointment not found" });
     }
@@ -130,13 +130,15 @@ exports.updateAppointmentStatus = async (req, res) => {
     appointment.status = status;
     await appointment.save();
 
+    console.log(`Appointment status updated to: ${status}`);
+
     res.json({
       success: true,
       message: "Appointment status updated",
       data: appointment,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Error in updateAppointmentStatus:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
